@@ -934,6 +934,10 @@ double APInt::roundToDouble(bool isSigned) const {
 
 // Truncate to new width.
 APInt APInt::trunc(unsigned width) const {
+  if (width == BitWidth) {
+    fprintf(stderr, "Truncating %d to %d\n", BitWidth, width);
+    return *this;
+  }
   assert(width < BitWidth && "Invalid APInt Truncate request");
   assert(width && "Can't truncate to 0 bits");
 
@@ -957,6 +961,11 @@ APInt APInt::trunc(unsigned width) const {
 
 // Sign extend to a new width.
 APInt APInt::sext(unsigned width) const {
+  if (width == BitWidth) {
+    fprintf(stderr, "Sign extending %d to %d\n", BitWidth, width);
+    return *this;
+  }
+
   assert(width > BitWidth && "Invalid APInt SignExtend request");
 
   if (width <= APINT_BITS_PER_WORD) {
@@ -998,6 +1007,11 @@ APInt APInt::sext(unsigned width) const {
 
 //  Zero extend to a new width.
 APInt APInt::zext(unsigned width) const {
+  if (width == BitWidth) {
+    fprintf(stderr, "Zero extending %d to %d\n", BitWidth, width);
+    return *this;
+  }
+
   assert(width > BitWidth && "Invalid APInt ZeroExtend request");
 
   if (width <= APINT_BITS_PER_WORD)
