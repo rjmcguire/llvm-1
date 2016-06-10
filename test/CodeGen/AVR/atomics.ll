@@ -12,3 +12,13 @@ define i8 @atomic_load8(i8* %foo) {
   ret i8 %val
 }
 
+; CHECK-LABEL: atomic_load16
+; CHECK:      in r0, 63
+; CHECK-NEXT: cli
+; CHECK-NEXT: movw [[RR:r[0-9]+]], [[RD:r[0-9]+]]
+; CHECK-NEXT: out 63, r0
+define i16 @atomic_load16(i16* %foo) {
+  %val = load atomic i16, i16* %foo unordered, align 2
+  ret i16 %val
+}
+

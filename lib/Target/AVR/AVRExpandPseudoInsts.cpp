@@ -70,6 +70,8 @@ private:
 
   template<typename Func>
   bool expandAtomic(Block &MBB, BlockIt MBBI, Func f);
+
+  bool expandAtomicBinaryOp(unsigned Opcode, Block &MBB, BlockIt MBBI);
 };
 
 char AVRExpandPseudo::ID = 0;
@@ -836,21 +838,24 @@ bool AVRExpandPseudo::expandAtomic(Block &MBB, BlockIt MBBI, Func f) {
   return true;
 }
 
-template<>
-bool AVRExpandPseudo::expand<AVR::AtomicLoad8>(Block &MBB, BlockIt MBBI) {
+bool AVRExpandPseudo::expandAtomicBinaryOp(unsigned Opcode, Block &MBB, BlockIt MBBI) {
   return expandAtomic(MBB, MBBI, [&](MachineInstr &MI) {
-      auto Rd = MI.getOperand(0);
-      auto Rr = MI.getOperand(1);
+      auto Op1 = MI.getOperand(0);
+      auto Op2 = MI.getOperand(1);
 
-      buildMI(MBB, MBBI, AVR::MOVRdRr).addOperand(Rd).addOperand(Rr);
+      buildMI(MBB, MBBI, Opcode).addOperand(Op1).addOperand(Op2);
   });
 }
 
 template<>
+bool AVRExpandPseudo::expand<AVR::AtomicLoad8>(Block &MBB, BlockIt MBBI) {
+  return expandAtomicBinaryOp(AVR::MOVRdRr, MBB, MBBI);
+}
+
+
+template<>
 bool AVRExpandPseudo::expand<AVR::AtomicLoad16>(Block &MBB, BlockIt MBBI) {
-  MachineInstr &MI = *MBBI;
-  MI.eraseFromParent();
-  return true;
+  return expandAtomicBinaryOp(AVR::MOVWRdRr, MBB, MBBI);
 }
 
 template <>
