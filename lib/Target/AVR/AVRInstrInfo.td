@@ -1237,6 +1237,16 @@ isReMaterializable = 1 in
                  Requires<[HasSRAM]>;
 }
 
+def AtomicLoad8 :  Pseudo<(outs GPR8:$rd),
+                          (ins PTRREGS:$rr),
+                          "atomic_load $rd, $rr",
+                          [(set GPR8:$rd, (atomic_load i16:$rr))]>;
+
+def AtomicLoad16 : Pseudo<(outs DREGS:$rd),
+                          (ins PTRREGS:$rr),
+                          "atomic_load $rd, $rr",
+                          [(set DREGS:$rd, (atomic_load i16:$rr))]>;
+
 // Indirect store from register to data space.
 def STSKRr : F32DM<0b1,
                    (outs),

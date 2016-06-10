@@ -15,6 +15,7 @@
 
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/Target/TargetRegisterInfo.h"
 
 #include "AVR.h"
@@ -30,8 +31,15 @@ namespace llvm {
 class AVRExpandPseudo : public MachineFunctionPass {
 public:
   static char ID;
+
   const AVRRegisterInfo *TRI;
   const TargetInstrInfo *TII;
+
+  /// The register to be used for temporary storage.
+  const unsigned SCRATCH_REGISTER = AVR::R0;
+  /// The IO address of the status register.
+  const unsigned SREG_ADDR = 0x3f;
+
   AVRExpandPseudo() : MachineFunctionPass(ID) {}
 
   bool runOnMachineFunction(MachineFunction &MF) override;
@@ -57,6 +65,11 @@ private:
                               unsigned DstReg) {
     return BuildMI(MBB, MBBI, MBBI->getDebugLoc(), TII->get(Opcode), DstReg);
   }
+
+  MachineRegisterInfo &getRegInfo(Block &MBB) { return MBB.getParent()->getRegInfo(); }
+
+  template<typename Func>
+  bool expandAtomic(Block &MBB, BlockIt MBBI, Func f);
 };
 
 char AVRExpandPseudo::ID = 0;
@@ -799,6 +812,47 @@ bool AVRExpandPseudo::expand<AVR::LDDWRdPtrQ>(Block &MBB, BlockIt MBBI) {
   return true;
 }
 
+template<typename Func>
+bool AVRExpandPseudo::expandAtomic(Block &MBB, BlockIt MBBI, Func f) {
+  // Remove the pseudo instruction.
+  MachineInstr &MI = *MBBI;
+
+  // Store the SREG.
+  buildMI(MBB, MBBI, AVR::INRdA)
+    .addReg(SCRATCH_REGISTER, RegState::Define)
+    .addImm(SREG_ADDR);
+
+  // Disable exceptions.
+  buildMI(MBB, MBBI, AVR::BCLRs).addImm(7); // CLI
+
+  f(MI);
+
+  // Restore the status reg.
+  buildMI(MBB, MBBI, AVR::OUTARr)
+    .addImm(SREG_ADDR)
+    .addReg(SCRATCH_REGISTER);
+
+  MI.eraseFromParent();
+  return true;
+}
+
+template<>
+bool AVRExpandPseudo::expand<AVR::AtomicLoad8>(Block &MBB, BlockIt MBBI) {
+  return expandAtomic(MBB, MBBI, [&](MachineInstr &MI) {
+      auto Rd = MI.getOperand(0);
+      auto Rr = MI.getOperand(1);
+
+      buildMI(MBB, MBBI, AVR::MOVRdRr).addOperand(Rd).addOperand(Rr);
+  });
+}
+
+template<>
+bool AVRExpandPseudo::expand<AVR::AtomicLoad16>(Block &MBB, BlockIt MBBI) {
+  MachineInstr &MI = *MBBI;
+  MI.eraseFromParent();
+  return true;
+}
+
 template <>
 bool AVRExpandPseudo::expand<AVR::STSWKRr>(Block &MBB, BlockIt MBBI) {
   MachineInstr &MI = *MBBI;
@@ -1305,7 +1359,7 @@ bool AVRExpandPseudo::expand<AVR::SPWRITE>(Block &MBB, BlockIt MBBI) {
 
   buildMI(MBB, MBBI, AVR::INRdA)
     .addReg(AVR::R0, RegState::Define)
-    .addImm(0x3f)
+    .addImm(SREG_ADDR)
     .setMIFlags(Flags);
 
   buildMI(MBB, MBBI, AVR::BCLRs).addImm(0x07).setMIFlags(Flags);
@@ -1316,7 +1370,7 @@ bool AVRExpandPseudo::expand<AVR::SPWRITE>(Block &MBB, BlockIt MBBI) {
     .setMIFlags(Flags);
 
   buildMI(MBB, MBBI, AVR::OUTARr)
-    .addImm(0x3f)
+    .addImm(SREG_ADDR)
     .addReg(AVR::R0, RegState::Kill)
     .setMIFlags(Flags);
 
@@ -1359,6 +1413,8 @@ bool AVRExpandPseudo::expandMI(Block &MBB, BlockIt MBBI) {
     EXPAND(AVR::LDWRdPtrPd);
   case AVR::LDDWRdYQ: //:FIXME: remove this once PR13375 gets fixed
     EXPAND(AVR::LDDWRdPtrQ);
+    EXPAND(AVR::AtomicLoad8);
+    EXPAND(AVR::AtomicLoad16);
     EXPAND(AVR::STSWKRr);
     EXPAND(AVR::STWPtrRr);
     EXPAND(AVR::STWPtrPiRr);
